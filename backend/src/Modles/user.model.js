@@ -1,6 +1,7 @@
 import mongoose, { Schema } from "mongoose";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { type } from "os";
 
 const userSchema = new Schema(
   {
@@ -26,6 +27,7 @@ const userSchema = new Schema(
     email: {
       type: String,
       required: true,
+      unique: true,
       lowercase: true,
       trim: true,
     },
@@ -34,6 +36,22 @@ const userSchema = new Schema(
     },
     avatar: {
       type: String,
+    },
+    otp: {
+      type: String,
+      trim: true,
+    },
+    otpExpiry: {
+      type: Date,
+      trim: true,
+    },
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
+    otpRequest: {
+      type: [Number],
+      default: [],
     },
   },
   { timestamps: true }
@@ -64,7 +82,7 @@ userSchema.methods.generateAccessToken = function () {
   );
 };
 
-userSchema.methods.generateRefeshToken = function () {
+userSchema.methods.generateRefreshToken = function () {
   return jwt.sign(
     {
       _id: this._id,
@@ -77,6 +95,13 @@ userSchema.methods.generateRefeshToken = function () {
       expiresIn: process.env.REFRESH_TOKEN_EXPIRY,
     }
   );
+};
+
+userSchema.methods.generateOTP = function () {
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  this.otp = otp;
+  this.otpExpiry = Date.now() + 5 * 60 * 1000;
+  return otp;
 };
 const User = mongoose.model("User", userSchema);
 export { User };
