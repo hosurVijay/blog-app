@@ -3,6 +3,8 @@ import { User } from "../Modles/user.model.js";
 import { ApiError } from "../Utils/ApiError.js";
 import { ApiResponse } from "../Utils/ApiResponse.js";
 import { sendToUserEMailId } from "../Utils/otpVerity.js";
+import { uploadCloudinary } from "../Utils/cloudinary.js";
+import jwt from "jsonwebtoken";
 
 const generateAccessRefreshToken = async (userID) => {
   try {
@@ -20,9 +22,10 @@ const generateAccessRefreshToken = async (userID) => {
 };
 
 const signUpUser = asyncHandler(async (req, res) => {
-  const { username, fullname, email, password, confirmPassword } = req.body;
+  const { username, fullname, email, password, confirmPassword, avatar } =
+    req.body;
   if (
-    [username, fullname, email, password, confirmPassword].some(
+    [username, fullname, email, password, confirmPassword, avatar].some(
       (field) => field?.trim() === ""
     )
   ) {
@@ -40,10 +43,23 @@ const signUpUser = asyncHandler(async (req, res) => {
     throw new ApiError(400, "User already exist with same username and email");
   }
 
+  const avatarLocalpath = req.files?.avatar[0]?.path;
+
+  if (!avatarLocalpath) {
+    throw new ApiError(400, "Avatar File requried.");
+  }
+
+  const avatarImage = await uploadCloudinary(avatarLocalpath);
+
+  if (!avatarImage) {
+    throw new ApiError(400, "Avatar is required.");
+  }
+
   const user = await User.create({
     username: username.toLowerCase(),
     fullname,
     email,
+    avatar: avatarImage.url,
     password,
     isVerified: false,
   });
@@ -151,7 +167,7 @@ const resendOtp = asyncHandler(async (req, res) => {
   user.otpRequest.push(nowDate);
   await user.save();
 
-  await user.sendToUserEMailId(
+  await sendToUserEMailId(
     user.email,
     "Your new OTP for sign Up",
     `"Your new OTP is" ${newOtp}. this will expriy in 5 minutes.`
@@ -281,7 +297,7 @@ const loginUser = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, "LoggedIn successfull", loggedUser));
 });
 
-const logoutUser = asyncHandler(async (res, req) => {
+const logoutUser = asyncHandler(async (req, res) => {
   await User.findByIdAndUpdate(
     req.user?._id,
     {
@@ -356,3 +372,79 @@ const updateUserDetails = asyncHandler(async (req, res) => {
       new ApiResponse(200, "Details updated Successfully", safeUpdatedDetails)
     );
 });
+
+const refrehToken = asyncHandler(async (req, res) => {
+  const incomingRefreshToken = req.cookie?.refrehToken || req.body.refrehToken;
+  if (!incomingRefreshToken) {
+    throw new ApiError(404, "Unauthorized Request.");
+  }
+
+  try {
+    const decodedToken = jwt.verify(
+      incomingRefreshToken,
+      process.env.REFRESH_TOKEN_SECRET
+    );
+
+    const user = await User.findById(decodedToken?._id);
+    if (!user) {
+      throw new ApiError(400, "Invalid Token.");
+    }
+    if (incomingRefreshToken !== user?.refreshToken) {
+      throw new ApiError(401, "Refresh token is expired or used.");
+    }
+
+    const options = {
+      httpOnly: true,
+      secure: false,
+    };
+    const { accessToken, newRefreshToken } = generateAccessRefreshToken(
+      user?._id
+    );
+
+    res
+      .status(200)
+      .cookie("refrehToken", newRefreshToken, options)
+      .cookie("accesstoken", accessToken, options)
+      .json(
+        new ApiResponse(200, "Access token refreshed successfully", {
+          refrehToken: newRefreshToken,
+          accessToken,
+        })
+      );
+  } catch (error) {
+    throw new ApiError(
+      400,
+      error?.message,
+      "Failed to Refresh the refresh token"
+    );
+  }
+});
+
+const deleteAccount = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user?._id);
+
+  if (!user) {
+    throw new ApiError(400, "no user found.");
+  }
+
+  await User.findByIdAndDelete(user._id);
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, "Account deleted successfull", null));
+});
+
+export {
+  signUpUser,
+  loginUser,
+  logoutUser,
+  verifyUserOtp,
+  resendOtp,
+  refrehToken,
+  changePassword,
+  forgotPassword,
+  resetPassword,
+  updateUserDetails,
+  getUser,
+  deleteAccount,
+};
