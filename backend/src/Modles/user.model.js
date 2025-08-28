@@ -53,6 +53,10 @@ const userSchema = new Schema(
       type: [Number],
       default: [],
     },
+    totalPosts: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true }
 );
