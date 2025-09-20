@@ -26,6 +26,10 @@ const PostSchema = new Schema(
         ref: "User",
       },
     ],
+    likesCount: {
+      type: Number,
+      default: 0,
+    },
     views: {
       type: Number,
       default: 0,
